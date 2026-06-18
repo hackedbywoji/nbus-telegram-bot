@@ -24,3 +24,10 @@ Para desplegar este servicio, se requiere un archivo `.env` en la raíz (ignorad
 TELEGRAM_TOKEN=tu_token_aqui
 BUS_BONO=tu_numero_de_bono
 BUS_PIN=tu_pin_de_seguridad
+
+📝 Uso
+Instalar dependencias: pip install -r requirements.txt
+
+Instalar binarios de Playwright: playwright install chromium
+
+Ejecutar el servicio: python bot.py
