@@ -22,14 +22,16 @@ logger = logging.getLogger(__name__)
 
 # 1. FUNCIÓN DE SCRAPING CON PAGO INCLUIDO Y CAPTURAS DE ERROR
 async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta: str):
-    # La fecha oculta del sistema siempre es mañana por defecto (luego el bot lo inyecta si es HOY)
     datos_extraidos = query.data.split("|")
-    dia_str = datos_extraidos[0] # "hoy" o "manana"
+    dia_str = datos_extraidos[0]
     
+    # Adaptación para la V2: detectar si es hoy, mañana o una fecha concreta
     if dia_str == "hoy":
         fecha = datetime.now().strftime('%Y-%m-%d')
-    else:
+    elif dia_str == "manana":
         fecha = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    else:
+        fecha = dia_str # Recibe la fecha directamente del calendario (YYYY-MM-DD)
     
     if tipo_viaje == "ida":
         url_directa = f"https://comprasweb.interbus.es/venta/selection?origin=Corella.%20%20C%2F%20Tajadas%205&origin_id=Z10&origin_address=C%2F%20Tajadas,%20%205,%20Corella&destination=Tudela.%20%20Estaci%C3%B3n%20Bus.%20C%2F%20Cuesta%20Estaci%C3%B3n&destination_id=Z21&destination_address=Estaci%C3%B3n%20Bus.%20%20C%2F%20Cuesta%20Estaci%C3%B3n,%20%20Tudela&journey_type=0&departure_time={fecha}&passengers=1&fare_ids=01&genders=M&mode=0&schedules=false&locale=es-ES"
@@ -39,8 +41,8 @@ async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta
         url_directa = f"https://comprasweb.interbus.es/venta/selection?origin=Corella.%20%20C%2F%20Tajadas%205&origin_id=Z10&origin_address=C%2F%20Tajadas,%20%205,%20Corella&destination=Tudela.%20%20Estaci%C3%B3n%20Bus.%20C%2F%20Cuesta%20Estaci%C3%B3n&destination_id=Z21&destination_address=Estaci%C3%B3n%20Bus.%20%20C%2F%20Cuesta%20Estaci%C3%B3n,%20%20Tudela&journey_type=1&departure_time={fecha}&return_time={fecha}&passengers=1&fare_ids=01&genders=M&mode=0&schedules=false&locale=es-ES"
 
     async with async_playwright() as p:
-        # IMPORTANTE: Cuando quieras subirlo al servidor, pon headless=True
-        browser = await p.chromium.launch(headless=False) 
+        # ARREGLO DEL ERROR: headless=True para que funcione en Docker
+        browser = await p.chromium.launch(headless=True) 
         context = await browser.new_context()
         page = await context.new_page()
 
@@ -75,25 +77,19 @@ async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta
             await page.get_by_role("button", name="Aplicar").click()
             await page.wait_for_timeout(2000) 
 
-            # =========================================================
-            # 📝 INSERCIÓN DE TUS LÍNEAS DEL FORMULARIO FINAL
-            # =========================================================
+            # --- Finalizar compra ---
             logger.info("Rellenando campos de seguridad y aceptando términos...")
             await page.get_by_role("textbox", name="Repita correo *").fill("jowigutierrez2@gmail.com")
             
-            # País y Código Postal
             await page.locator("#countrycode").select_option("ES")
             await page.get_by_role("textbox", name="Código postal *").fill("31591")
             
-            # Checkbox de términos y condiciones
             await page.get_by_role("checkbox", name="He leído y acepto las").check()
             
             logger.info("Haciendo clic en PAGAR...")
             await page.get_by_role("button", name="Pagar").click()
             
-            # Esperamos 5 segundos a que la pasarela procese la confirmación del servidor
             await page.wait_for_timeout(5000)
-            # =========================================================
             
             await browser.close()
             return f"✅ ¡Compra finalizada! Billete emitido y enviado a jowigutierrez2@gmail.com"
@@ -126,8 +122,12 @@ def generar_teclado_buses(dia: str, tipo: str):
         horas_todas = ["8:10", "9:10", "10:40", "11:40", "13:05", "13:50", "15:20", "16:18", "18:05", "19:15", "20:50"]
         
     horas_validas = []
+    
+    # Comprobamos si es hoy para purgar horas
+    es_hoy = (dia == "hoy" or dia == ahora.strftime('%Y-%m-%d'))
+    
     for h in horas_todas:
-        if dia == "manana":
+        if not es_hoy:
             horas_validas.append(h)
         else:
             h_hour, h_min = map(int, h.split(':'))
@@ -152,14 +152,14 @@ def generar_teclado_buses(dia: str, tipo: str):
 
 # 3. MENÚ INICIAL
 async def comando_pillar_bus(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # 🔒 COMPROBACIÓN DE SEGURIDAD
     if update.effective_user.id != MI_TELEGRAM_ID:
         await update.message.reply_text("⛔️ Acceso denegado. Este bot es de uso privado.")
         return
 
     teclado = [
         [InlineKeyboardButton("📅 Para HOY", callback_data="hoy|main")],
-        [InlineKeyboardButton("📅 Para MAÑANA", callback_data="manana|main")]
+        [InlineKeyboardButton("📅 Para MAÑANA", callback_data="manana|main")],
+        [InlineKeyboardButton("📆 Elegir otro día...", callback_data="calendario|nada")]
     ]
     await update.message.reply_text("🚌💨 ¿Para cuándo necesitas el billete?", reply_markup=InlineKeyboardMarkup(teclado))
 
@@ -167,7 +167,6 @@ async def comando_pillar_bus(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     
-    # 🔒 COMPROBACIÓN DE SEGURIDAD PARA BOTONES
     if query.from_user.id != MI_TELEGRAM_ID:
         await query.answer("⛔️ No tienes permiso para tocar esto.", show_alert=True)
         return
@@ -179,8 +178,25 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     accion = datos[1]
 
     if dia == "inicio":
-        teclado_inicio = [[InlineKeyboardButton("📅 Para HOY", callback_data="hoy|main")], [InlineKeyboardButton("📅 Para MAÑANA", callback_data="manana|main")]]
+        teclado_inicio = [
+            [InlineKeyboardButton("📅 Para HOY", callback_data="hoy|main")], 
+            [InlineKeyboardButton("📅 Para MAÑANA", callback_data="manana|main")],
+            [InlineKeyboardButton("📆 Elegir otro día...", callback_data="calendario|nada")]
+        ]
         await query.edit_message_text("🚌💨 ¿Para cuándo necesitas el billete?", reply_markup=InlineKeyboardMarkup(teclado_inicio))
+        return
+
+    # GENERADOR DE CALENDARIO
+    if dia == "calendario":
+        teclado_calendario = []
+        for i in range(2, 9):
+            fecha_obj = datetime.now() + timedelta(days=i)
+            fecha_str = fecha_obj.strftime('%Y-%m-%d')
+            fecha_mostrar = fecha_obj.strftime('%d/%m/%Y')
+            teclado_calendario.append([InlineKeyboardButton(f"🗓 {fecha_mostrar}", callback_data=f"{fecha_str}|main")])
+        
+        teclado_calendario.append([InlineKeyboardButton("🔙 Volver", callback_data="inicio|inicio")])
+        await query.edit_message_text("📆 Selecciona la fecha para tu billete:", reply_markup=InlineKeyboardMarkup(teclado_calendario))
         return
 
     if accion == "main":
@@ -190,7 +206,7 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("Solo Vuelta ⬅️", callback_data=f"{dia}|menu_vuelta")],
             [InlineKeyboardButton("🔙 Cambiar de día", callback_data="inicio|inicio")]
         ]
-        texto_dia = "HOY" if dia == "hoy" else "MAÑANA"
+        texto_dia = "HOY" if dia == "hoy" else "MAÑANA" if dia == "manana" else dia
         await query.edit_message_text(f"Ruta para {texto_dia}. ¿Qué necesitas?", reply_markup=InlineKeyboardMarkup(teclado_main))
         return
 
@@ -207,10 +223,10 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if total == 0:
             await query.edit_message_text("😢 Ya no quedan buses de vuelta disponibles para hoy.", reply_markup=markup)
         else:
+            await query.edit_message_text(f"⬅️ Horas de VUELTA disponibles ({dia.upper()}):", markup=markup) # Corregido typo interno
             await query.edit_message_text(f"⬅️ Horas de VUELTA disponibles ({dia.upper()}):", reply_markup=markup)
         return
 
-    # --- EJECUCIÓN ---
     else:
         tipo_viaje = datos[1]
         hora_ida = datos[2]
