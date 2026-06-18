@@ -18,7 +18,7 @@ Eliminar la fricción de ejecutar tareas manuales y repetitivas en pasarelas web
 * **Framework Bot:** `python-telegram-bot`
 * **Gestión de entorno:** `python-dotenv`
 
-## 🔐 Configuración (.env)
+## 🔐 Configuración
 Para desplegar este servicio, se requiere un archivo `.env` en la raíz (ignorado por seguridad en este repositorio) con las siguientes variables:
 ```text
 TELEGRAM_TOKEN=tu_token_aqui
