@@ -1,7 +1,3 @@
-¡Vamos a dejar ese README impecable, Jowi! Como en esta misma sesión acabamos de implementar la V2 con el calendario dinámico y hemos dejado el bot corriendo en Docker a prueba de fallos en tu Cloud PC, he actualizado el texto para que refleje el nivel real y actual de tu proyecto.
-
-Aquí tienes la versión definitiva, con un enfoque técnico, profesional y lista para que la pegues directamente en tu repositorio de GitHub:
-
 🚌 NBUS Telegram Bot Automator
 Un microservicio en Python diseñado para automatizar la reserva y compra dinámica de billetes de autobús mediante web scraping asíncrono y la API de Telegram.
 
