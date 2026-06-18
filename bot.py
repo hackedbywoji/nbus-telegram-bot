@@ -12,14 +12,17 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 BUS_BONO = os.getenv('BUS_BONO')
 BUS_PIN = os.getenv('BUS_PIN')
 
+# ==========================================
+# 🔒 LISTA BLANCA DE USUARIOS PERMITIDOS
+# ==========================================
+MI_TELEGRAM_ID = 6803736851
+
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # 1. FUNCIÓN DE SCRAPING CON PAGO INCLUIDO Y CAPTURAS DE ERROR
 async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta: str):
     # La fecha oculta del sistema siempre es mañana por defecto (luego el bot lo inyecta si es HOY)
-    # NOTA: Recogemos la fecha de los menús (si viene de hoy, ya viene filtrado. Si es mañana, aplicamos timedelta)
-    # Ojo: la variable dia_elegido no viaja directamente, así que recalculamos la fecha aquí
     datos_extraidos = query.data.split("|")
     dia_str = datos_extraidos[0] # "hoy" o "manana"
     
@@ -36,7 +39,7 @@ async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta
         url_directa = f"https://comprasweb.interbus.es/venta/selection?origin=Corella.%20%20C%2F%20Tajadas%205&origin_id=Z10&origin_address=C%2F%20Tajadas,%20%205,%20Corella&destination=Tudela.%20%20Estaci%C3%B3n%20Bus.%20C%2F%20Cuesta%20Estaci%C3%B3n&destination_id=Z21&destination_address=Estaci%C3%B3n%20Bus.%20%20C%2F%20Cuesta%20Estaci%C3%B3n,%20%20Tudela&journey_type=1&departure_time={fecha}&return_time={fecha}&passengers=1&fare_ids=01&genders=M&mode=0&schedules=false&locale=es-ES"
 
     async with async_playwright() as p:
-        # IMPORTANTE: Cuando quieras subirlo a Render, pon headless=True
+        # IMPORTANTE: Cuando quieras subirlo al servidor, pon headless=True
         browser = await p.chromium.launch(headless=False) 
         context = await browser.new_context()
         page = await context.new_page()
@@ -149,6 +152,11 @@ def generar_teclado_buses(dia: str, tipo: str):
 
 # 3. MENÚ INICIAL
 async def comando_pillar_bus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 🔒 COMPROBACIÓN DE SEGURIDAD
+    if update.effective_user.id != MI_TELEGRAM_ID:
+        await update.message.reply_text("⛔️ Acceso denegado. Este bot es de uso privado.")
+        return
+
     teclado = [
         [InlineKeyboardButton("📅 Para HOY", callback_data="hoy|main")],
         [InlineKeyboardButton("📅 Para MAÑANA", callback_data="manana|main")]
@@ -158,6 +166,12 @@ async def comando_pillar_bus(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # 4. GESTOR DE BOTONES INTERACTIVOS
 async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    
+    # 🔒 COMPROBACIÓN DE SEGURIDAD PARA BOTONES
+    if query.from_user.id != MI_TELEGRAM_ID:
+        await query.answer("⛔️ No tienes permiso para tocar esto.", show_alert=True)
+        return
+
     await query.answer()
     
     datos = query.data.split("|")
