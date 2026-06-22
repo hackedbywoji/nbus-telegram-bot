@@ -25,8 +25,6 @@ Eliminar la fricción de ejecutar tareas manuales y repetitivas en pasarelas web
 
 Para desplegar este servicio, se requiere un archivo `.env` en la raíz del proyecto.
 
-> ⚠️ **IMPORTANTE:** Por seguridad, este archivo está declarado en el `.gitignore` y **nunca debe subirse al repositorio público**.
-
 ```env
 TELEGRAM_TOKEN=tu_token_aqui
 BUS_BONO=tu_numero_de_bono
