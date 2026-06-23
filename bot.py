@@ -2,36 +2,42 @@ import os
 import logging
 import asyncio
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from playwright.async_api import async_playwright
 
 load_dotenv()
+
+# ==========================================
+# 🔒 CREDENCIALES Y VARIABLES DE ENTORNO
+# ==========================================
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 BUS_BONO = os.getenv('BUS_BONO')
 BUS_PIN = os.getenv('BUS_PIN')
-
-# ==========================================
-# 🔒 LISTA BLANCA DE USUARIOS PERMITIDOS
-# ==========================================
-MI_TELEGRAM_ID = 6803736851
+CORREO_USER = os.getenv('CORREO_USER')
+CP_USER = os.getenv('CP_USER')
+MI_TELEGRAM_ID = int(os.getenv('MI_TELEGRAM_ID', 0)) 
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+ZONA_ES = ZoneInfo("Europe/Madrid")
 
 # 1. FUNCIÓN DE SCRAPING CON PAGO INCLUIDO Y CAPTURAS DE ERROR
 async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta: str):
     datos_extraidos = query.data.split("|")
     dia_str = datos_extraidos[0]
     
-    # Adaptación para la V2: detectar si es hoy, mañana o una fecha concreta
+    ahora = datetime.now(ZONA_ES)
+    
     if dia_str == "hoy":
-        fecha = datetime.now().strftime('%Y-%m-%d')
+        fecha = ahora.strftime('%Y-%m-%d')
     elif dia_str == "manana":
-        fecha = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        fecha = (ahora + timedelta(days=1)).strftime('%Y-%m-%d')
     else:
-        fecha = dia_str # Recibe la fecha directamente del calendario (YYYY-MM-DD)
+        fecha = dia_str 
     
     if tipo_viaje == "ida":
         url_directa = f"https://comprasweb.interbus.es/venta/selection?origin=Corella.%20%20C%2F%20Tajadas%205&origin_id=Z10&origin_address=C%2F%20Tajadas,%20%205,%20Corella&destination=Tudela.%20%20Estaci%C3%B3n%20Bus.%20C%2F%20Cuesta%20Estaci%C3%B3n&destination_id=Z21&destination_address=Estaci%C3%B3n%20Bus.%20%20C%2F%20Cuesta%20Estaci%C3%B3n,%20%20Tudela&journey_type=0&departure_time={fecha}&passengers=1&fare_ids=01&genders=M&mode=0&schedules=false&locale=es-ES"
@@ -41,7 +47,6 @@ async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta
         url_directa = f"https://comprasweb.interbus.es/venta/selection?origin=Corella.%20%20C%2F%20Tajadas%205&origin_id=Z10&origin_address=C%2F%20Tajadas,%20%205,%20Corella&destination=Tudela.%20%20Estaci%C3%B3n%20Bus.%20C%2F%20Cuesta%20Estaci%C3%B3n&destination_id=Z21&destination_address=Estaci%C3%B3n%20Bus.%20%20C%2F%20Cuesta%20Estaci%C3%B3n,%20%20Tudela&journey_type=1&departure_time={fecha}&return_time={fecha}&passengers=1&fare_ids=01&genders=M&mode=0&schedules=false&locale=es-ES"
 
     async with async_playwright() as p:
-        # ARREGLO DEL ERROR: headless=True para que funcione en Docker
         browser = await p.chromium.launch(headless=True) 
         context = await browser.new_context()
         page = await context.new_page()
@@ -50,7 +55,6 @@ async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta
             logger.info(f"Cargando la plataforma para el {fecha}...")
             await page.goto(url_directa)
             
-            # --- Quitar Cookies ---
             try:
                 btn_cookies = page.get_by_role("button", name="Denegar")
                 await btn_cookies.wait_for(timeout=2000, state="visible") 
@@ -58,7 +62,6 @@ async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta
             except Exception:
                 pass
 
-            # --- Seleccionar buses ---
             if tipo_viaje == "ida":
                 await page.locator("app-departure").filter(has_text=hora_ida).locator(".Button").first.click()
             elif tipo_viaje == "vuelta":
@@ -70,19 +73,17 @@ async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta
             await page.get_by_role("button", name="Continuar").click()
             await page.get_by_role("button", name="Continuar").click()
             
-            # --- Meter Bono ---
             await page.get_by_role("textbox", name="Bono").fill(BUS_BONO)
             await page.get_by_role("textbox", name="Bono").press("Tab")
             await page.get_by_role("textbox", name="Pin").fill(BUS_PIN)
             await page.get_by_role("button", name="Aplicar").click()
             await page.wait_for_timeout(2000) 
 
-            # --- Finalizar compra ---
             logger.info("Rellenando campos de seguridad y aceptando términos...")
-            await page.get_by_role("textbox", name="Repita correo *").fill("jowigutierrez2@gmail.com")
+            await page.get_by_role("textbox", name="Repita correo *").fill(CORREO_USER)
             
             await page.locator("#countrycode").select_option("ES")
-            await page.get_by_role("textbox", name="Código postal *").fill("31591")
+            await page.get_by_role("textbox", name="Código postal *").fill(CP_USER)
             
             await page.get_by_role("checkbox", name="He leído y acepto las").check()
             
@@ -92,7 +93,7 @@ async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta
             await page.wait_for_timeout(5000)
             
             await browser.close()
-            return f"✅ ¡Compra finalizada! Billete emitido y enviado a jowigutierrez2@gmail.com"
+            return f"✅ ¡Compra finalizada! Billete emitido y enviado a {CORREO_USER}"
             
         except Exception as e:
             logger.error(f"Fallo detectado: {e}")
@@ -113,7 +114,7 @@ async def automatizar_reserva(query, tipo_viaje: str, hora_ida: str, hora_vuelta
 
 # 2. FILTRADO DINÁMICO DE HORARIOS
 def generar_teclado_buses(dia: str, tipo: str):
-    ahora = datetime.now()
+    ahora = datetime.now(ZONA_ES)
     limite = ahora + timedelta(minutes=20)
     
     if tipo == "ida":
@@ -123,7 +124,6 @@ def generar_teclado_buses(dia: str, tipo: str):
         
     horas_validas = []
     
-    # Comprobamos si es hoy para purgar horas
     es_hoy = (dia == "hoy" or dia == ahora.strftime('%Y-%m-%d'))
     
     for h in horas_todas:
@@ -186,11 +186,11 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🚌💨 ¿Para cuándo necesitas el billete?", reply_markup=InlineKeyboardMarkup(teclado_inicio))
         return
 
-    # GENERADOR DE CALENDARIO
     if dia == "calendario":
         teclado_calendario = []
+        ahora = datetime.now(ZONA_ES)
         for i in range(2, 9):
-            fecha_obj = datetime.now() + timedelta(days=i)
+            fecha_obj = ahora + timedelta(days=i)
             fecha_str = fecha_obj.strftime('%Y-%m-%d')
             fecha_mostrar = fecha_obj.strftime('%d/%m/%Y')
             teclado_calendario.append([InlineKeyboardButton(f"🗓 {fecha_mostrar}", callback_data=f"{fecha_str}|main")])
@@ -223,7 +223,6 @@ async def manejar_botones(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if total == 0:
             await query.edit_message_text("😢 Ya no quedan buses de vuelta disponibles para hoy.", reply_markup=markup)
         else:
-            await query.edit_message_text(f"⬅️ Horas de VUELTA disponibles ({dia.upper()}):", markup=markup) # Corregido typo interno
             await query.edit_message_text(f"⬅️ Horas de VUELTA disponibles ({dia.upper()}):", reply_markup=markup)
         return
 
