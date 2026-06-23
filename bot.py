@@ -2,6 +2,7 @@ import os
 import logging
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from typing import Optional
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -55,7 +56,7 @@ def build_url(fecha: str, tipo_viaje: str) -> str:
                 f"&journey_type=0&departure_time={fecha}{comun}")
 
 
-async def automatizar_reserva(fecha: str, tipo_viaje: str, hora_ida: str | None, hora_vuelta: str | None, message):
+async def automatizar_reserva(fecha: str, tipo_viaje: str, hora_ida: Optional[str], hora_vuelta: Optional[str], message):
     url = build_url(fecha, tipo_viaje)
 
     async with async_playwright() as p:
